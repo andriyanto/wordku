@@ -27,7 +27,7 @@
 //! document's windows leaves the document open and asks nothing; closing its last window closes
 //! it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use craft_window::{Document, Frame, Viewports, WindowEvent, WindowId, WindowList, WindowMenu};
 use egui::{ViewportCommand, ViewportId};
@@ -94,6 +94,13 @@ pub struct Windows {
     driven: bool,
     /// View › Window: Side by Side and Synchronous Scrolling (#322).
     arranged: arrange::State,
+    /// The monitors, in physical pixels, as the desktop app last listed them
+    /// ([`WordApp::set_monitors`]); empty where it can't (Wayland, tests, the web).
+    monitors: Vec<egui::Rect>,
+    /// Windows whose place has been worked out: every window but those opened this frame.
+    placed: HashSet<u64>,
+    /// New windows checked until they show on the monitor they were meant for.
+    pending: HashMap<u64, crate::window_place::Pending>,
 }
 
 impl Windows {
@@ -118,6 +125,9 @@ impl Windows {
             input_plugin: false,
             driven: false,
             arranged: arrange::State::default(),
+            monitors: Vec::new(),
+            placed: HashSet::from([1]),
+            pending: HashMap::new(),
         }
     }
 
@@ -244,6 +254,14 @@ pub(crate) fn monitor_of(window: craft_window::Rect, monitor: egui::Vec2) -> cra
     craft_window::Rect::new(tile(cx, monitor.x), tile(cy, monitor.y), monitor.x, monitor.y)
 }
 
+/// A viewport's outer rectangle in physical pixels, with its pixels per point, once it reports it.
+fn physical(ctx: &egui::Context, viewport: ViewportId) -> Option<(egui::Rect, f32)> {
+    ctx.input_for(viewport, |i| {
+        let ppp = i.pixels_per_point;
+        Some((crate::window_place::to_physical(i.viewport().outer_rect?, ppp)?, ppp))
+    })
+}
+
 /// Control-channel input for a window in a viewport of its own: eframe's raw-input hook
 /// ([`WordApp::raw_input_hook`]) sees only the root viewport's input, and egui runs a plugin's
 /// input hook for every viewport. On macOS it also reads Control-click as the secondary button
@@ -329,6 +347,12 @@ impl WordApp {
     /// The viewport builder that new windows start from.
     pub fn window_builder(&self) -> &egui::ViewportBuilder {
         &self.windows.builder
+    }
+
+    /// The monitors, in physical pixels (the desktop app lists them every frame), so a new
+    /// document window opens on the monitor of the window focused last ([`crate::window_place`]).
+    pub fn set_monitors(&mut self, monitors: Vec<egui::Rect>) {
+        self.windows.monitors = monitors;
     }
 
     /// Whether a close request for the root viewport closes only the window drawn there: true
@@ -653,8 +677,26 @@ impl WordApp {
             Some(mon) => crate::window_geometry::fit_builder_to_monitor(self.windows.builder.clone(), mon, frame),
             None => self.windows.builder.clone(),
         };
-        // Where a new window may go: the monitor the last focused window is on.
-        viewports.set_bounds(list.cascade_origin(None).zip(target_monitor).map(|(w, m)| monitor_of(w, m)));
+        // The window focused last, in physical pixels, with its pixels per point.
+        let last = list.recent().find_map(|id| physical(&ctx, viewports.viewport_id(id)).map(|p| (id, p)));
+        let monitors = &self.windows.monitors;
+        let last_monitor = last.and_then(|(_, (rect, _))| Some((rect, crate::window_place::monitor_holding(rect, monitors)?)));
+        // Where a new window may go: the monitor the last focused window is on. Measured where
+        // the desktop app lists the monitors; else guessed from that monitor's size.
+        let measured = last.zip(last_monitor).map(|((_, (_, ppp)), (_, m))| craft_window::Rect::from(m / ppp));
+        viewports.set_bounds(measured.or_else(|| list.cascade_origin(None).zip(target_monitor).map(|(w, m)| monitor_of(w, m))));
+        // Windows opening now: where they should show, to check once they do.
+        let new: Vec<(WindowId, u64)> =
+            list.ids().filter_map(|id| list.get(id).map(|k| (id, *k))).filter(|(_, k)| !self.windows.placed.contains(k)).collect();
+        for (_, key) in &new {
+            self.windows.placed.insert(*key);
+            if let (Some((_, (_, ppp))), Some((previous, monitor))) = (last, last_monitor) {
+                let inner = base.inner_size.unwrap_or(egui::vec2(1440.0, 920.0));
+                let size = (inner + frame) * ppp;
+                let at = crate::window_place::cascade_on(previous, size, monitor, craft_window::CASCADE_STEP * ppp);
+                self.windows.pending.insert(*key, crate::window_place::Pending::new(monitor, at));
+            }
+        }
         self.windows.showing = true;
         let events = viewports.show(
             ui,
@@ -666,6 +708,22 @@ impl WordApp {
             |ui, _, key| self.draw_window(ui, *key),
         );
         self.windows.showing = false;
+        // New windows that opened off the monitor they were meant for move there (a window on a
+        // monitor scaled unlike the one Windows makes it on lands elsewhere).
+        let ids: HashMap<u64, WindowId> = list.ids().filter_map(|id| list.get(id).map(|k| (*k, id))).collect();
+        self.windows.pending.retain(|key, pending| {
+            let Some(&id) = ids.get(key) else { return false };
+            match pending.check(physical(&ctx, viewports.viewport_id(id))) {
+                crate::window_place::Check::Wait => true,
+                crate::window_place::Check::Done => false,
+                crate::window_place::Check::Move(at) => {
+                    log::info!("window {key}: opened off its monitor, moved to {at:?}");
+                    ctx.send_viewport_cmd_to(viewports.viewport_id(id), ViewportCommand::OuterPosition(at));
+                    true
+                }
+            }
+        });
+        self.windows.placed.retain(|key| ids.contains_key(key));
         self.windows.list = list;
         self.windows.viewports = Some(viewports);
         self.window_events(&ctx, &events);
