@@ -22,6 +22,19 @@ any pending snapshot, removes the current document's recovery generations, and f
 fails. Encrypted recovery is not implemented. Documents opened with a password keep recovery
 disabled for that session. Removing the password allows future recovery again.
 
+## A file that hangs or crashes WordKu while opening
+
+A document file is read on a thread of its own with a large stack, and WordKu waits at most 60
+seconds for it. A file that keeps the reader busy longer (damaged, or made to loop) doesn't open:
+a dialog says which file and why, and the other windows go on as they were. The reader can't be
+stopped from outside, so it may go on using the processor in the background until it finishes.
+
+While a file is read, a marker naming it is kept in the settings folder (`opening/`), locked by
+WordKu. A crash that closes WordKu while reading leaves the marker unlocked; the next start
+reports that file in a dialog and removes the marker. Unsaved documents are then in File ›
+Recover, as after any crash. A crash still closes every window: only a reader in a separate
+process would keep the others open.
+
 ## Several open documents
 
 Every dirty open document keeps its own copy, whether it is shown or not. A crash with several

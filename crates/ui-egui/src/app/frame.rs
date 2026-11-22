@@ -14,7 +14,33 @@ impl WordApp {
         log::warn!("{path}: {error}");
         let msg = crate::i18n::fmt(crate::tl!("Couldn't open {path}: {error}"), &[("path", &crate::i18n::isolate_path(path)), ("error", error)]);
         self.status(msg.clone());
+        // A file whose reading ran out of time: said in a dialog too, not only on the status bar.
+        #[cfg(not(target_arch = "wasm32"))]
+        if wordcraft_engine::open_watch::is_time_limit(error) && self.dialog.is_none() {
+            self.dialog = Some(dialogs::Dialog::OpenProblem { text: msg.clone() });
+        }
         msg
+    }
+
+    /// Files a crash interrupted while they were being read on an earlier run
+    /// ([`wordcraft_engine::open_watch::interrupted`]): said in a dialog, so they aren't opened
+    /// again unawares. Nothing for none.
+    pub fn report_interrupted_opens(&mut self, files: &[String]) {
+        let Some(first) = files.first() else { return };
+        let names = if files.len() == 1 {
+            crate::i18n::isolate_path(first)
+        } else {
+            files.iter().map(|f| format!("• {}", crate::i18n::isolate_path(f))).collect::<Vec<_>>().join("\n")
+        };
+        let text = crate::i18n::fmt(
+            crate::tl!(
+                "WordKu closed unexpectedly while opening {files}. The file may be damaged: open it again only if you trust it. Documents that weren't saved are in File › Recover."
+            ),
+            &[("files", &names)],
+        );
+        log::warn!("a crash interrupted opening: {files:?}");
+        self.status(text.clone());
+        self.dialog = Some(dialogs::Dialog::OpenProblem { text });
     }
 
     pub fn status(&mut self, s: impl Into<String>) {

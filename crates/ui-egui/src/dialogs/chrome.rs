@@ -201,6 +201,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
         Dialog::MergeRule { .. } => "If…Then…Else",
         Dialog::MatchFields { .. } => "Match Fields",
         Dialog::CheckErrors { .. } => "Check for Errors",
+        Dialog::OpenProblem { .. } => "Couldn't Open the File",
         Dialog::TableProperties { .. } => "Table Properties",
         Dialog::CellMargins { .. } => "Cell Margins",
         Dialog::Password { .. } => "Password",

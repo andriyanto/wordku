@@ -400,6 +400,11 @@ pub enum Dialog {
         fields: Vec<String>,
         address: Value,
     },
+    /// A file that couldn't be opened, said so it isn't missed: one whose reading ran out of time,
+    /// or one a crash interrupted on the last run ([`wordcraft_engine::open_watch`]).
+    OpenProblem {
+        text: String,
+    },
     /// Mailings › Check for Errors: merge fields the recipient list doesn't have.
     CheckErrors {
         unknown: Vec<String>,
@@ -545,6 +550,7 @@ impl Dialog {
             Dialog::MergeRule { .. } => "ruleIf",
             Dialog::MatchFields { .. } => "matchFields",
             Dialog::CheckErrors { .. } => "checkErrors",
+            Dialog::OpenProblem { .. } => "openProblem",
             Dialog::TableProperties { .. } => "tableProperties",
             Dialog::CellMargins { .. } => "tableCellMargins",
             Dialog::Password { .. } => "password",
