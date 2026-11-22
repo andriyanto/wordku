@@ -58,6 +58,9 @@ impl eframe::App for App {
         self.0.logic(ctx);
         self.3.show(frame, file_dialogs::first_window_asks(self.0.active_viewport()));
         let mut window = self.4;
+        // A new document window opens on the monitor of the window focused last, measured on the
+        // monitors themselves: egui reports a monitor's size, not where it is.
+        self.0.set_monitors(monitor_rects(frame));
         // Only until the off-screen check below has run: it is the one reader.
         if self.1.is_some() {
             let (on_a_monitor, primary_monitor_rect) = monitor_geometry(frame, ctx.pixels_per_point());
@@ -135,6 +138,19 @@ impl eframe::App for App {
             key_file.remove();
         }
     }
+}
+
+/// Every monitor's rectangle in physical pixels, the desktop's shared coordinates. Empty where
+/// the platform can't list them (Wayland, headless).
+fn monitor_rects(frame: &eframe::Frame) -> Vec<egui::Rect> {
+    let Some(w) = frame.winit_window() else { return Vec::new() };
+    w.available_monitors()
+        .map(|m| {
+            let (pos, size) = (m.position(), m.size());
+            egui::Rect::from_min_size(egui::pos2(pos.x as f32, pos.y as f32), egui::vec2(size.width as f32, size.height as f32))
+        })
+        .filter(|r| r.is_finite() && r.is_positive())
+        .collect()
 }
 
 /// Whether a grippable part of the window is on a monitor, and the primary monitor bounds.

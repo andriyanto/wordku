@@ -105,6 +105,7 @@ pub mod updates_ui;
 pub mod widgets;
 pub mod window_close;
 pub mod window_geometry;
+mod window_place;
 mod window_ui;
 mod windows;
 pub mod wordart_menus;
