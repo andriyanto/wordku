@@ -285,6 +285,18 @@
       "Software\\Classes\\Applications\\wordku.exe\\SupportedTypes",
       ".txt",
       ""
+    ],
+    [
+      "-1",
+      "Software\\WordKu\\Installer",
+      "DesktopShortcut",
+      "[DESKTOPSHORTCUT]"
+    ],
+    [
+      "-1",
+      "Software\\WordKu\\Installer",
+      "DesktopShortcutComponent",
+      "#1"
     ]
   ],
   "mode": "dualScope"

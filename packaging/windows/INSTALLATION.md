@@ -9,6 +9,10 @@ A cross-context copy is refused; changing context means uninstalling the old cop
 
 App registration follows the selected context. Existing optional shortcuts and file-handler
 choices stay app-owned. No new cleanup operation or model/settings migration is introduced.
+WordKu's second page offers a desktop shortcut (off for a fresh install; an update keeps the
+previous choice, saved under `Software\WordKu\Installer` in the installed context). Silent
+installs take `DESKTOPSHORTCUT=1` or `DESKTOPSHORTCUT=0`. The Start menu shortcut is always
+installed.
 Packaged resources remain package-owned; separately downloaded shared models are not caches
 and are outside this installer's ownership.
 
