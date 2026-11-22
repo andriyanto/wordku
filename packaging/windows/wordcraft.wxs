@@ -22,6 +22,21 @@
          (WixToolset.UI.wixext); package.ps1 builds the license RTF from LICENSE-MIT and
          LICENSE-APACHE. The finish page offers to launch WordKu (ticked by default) through
          WixShellExec (WixToolset.Util.wixext); silent installs (/qn) never show it. -->
+    <!-- Desktop shortcut: a checkbox after the "Who should use WordKu?" page, off for a fresh
+         install. An explicit command-line value (DESKTOPSHORTCUT=1 or 0) wins; otherwise the
+         previous installation's choice is kept. Run only in the first sequence so the execute
+         sequence cannot reload the old choice after the user unchecks the box. -->
+    <Property Id="DESKTOPSHORTCUT" Secure="yes" />
+    <Property Id="SAVEDDESKTOPSHORTCUT" Secure="yes" />
+    <SetProperty Id="DESKTOPSHORTCUT" Action="LoadDesktopShortcutPreference" Value="1" After="CraftLoadOption1U" Sequence="first" Condition="NOT DESKTOPSHORTCUT AND SAVEDDESKTOPSHORTCUT = &quot;1&quot;" />
+    <SetProperty Id="DESKTOPSHORTCUT" Action="DefaultDesktopShortcut" Value="0" After="LoadDesktopShortcutPreference" Sequence="first" Condition="NOT DESKTOPSHORTCUT" />
+    <SetProperty Id="DesktopShortcutChoice" Value="1" After="DefaultDesktopShortcut" Sequence="ui" Condition="DESKTOPSHORTCUT = &quot;1&quot;" />
+    <!-- The saved choice of the context being installed (per user or per machine). -->
+    <Property Id="CRAFT_OPTION_1_M" Secure="yes"><RegistrySearch Id="CRAFT_OPTION_1_MSearch" Root="HKLM" Key="Software\WordKu\Installer" Name="DesktopShortcut" Type="raw" /></Property>
+    <SetProperty Id="SAVEDDESKTOPSHORTCUT" Action="CraftLoadOption1M" Value="[CRAFT_OPTION_1_M]" After="LaunchConditions" Sequence="both" Condition="ALLUSERS = 1" />
+    <Property Id="CRAFT_OPTION_1_U" Secure="yes"><RegistrySearch Id="CRAFT_OPTION_1_USearch" Root="HKCU" Key="Software\WordKu\Installer" Name="DesktopShortcut" Type="raw" /></Property>
+    <SetProperty Id="SAVEDDESKTOPSHORTCUT" Action="CraftLoadOption1U" Value="[CRAFT_OPTION_1_U]" After="CraftLoadOption1M" Sequence="both" Condition="ALLUSERS &lt;&gt; 1" />
+
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch WordKu" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
@@ -30,7 +45,25 @@
     <UI>
       <ui:WixUI Id="WixUI_Minimal" />
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchWordcraft" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+      <Dialog Id="DesktopShortcutDlg" Width="370" Height="220" Title="[ProductName] Setup" NoMinimize="yes">
+        <Control Id="Title" Type="Text" X="20" Y="15" Width="330" Height="30" Text="{\CraftScopeTitle}Shortcuts" />
+        <Control Id="Info" Type="Text" X="20" Y="50" Width="330" Height="30" Text="{\CraftScopeText}WordKu is always added to the Start menu. It can go on the desktop too." />
+        <Control Id="DesktopShortcutCheckbox" Type="CheckBox" X="20" Y="88" Width="330" Height="18" Property="DesktopShortcutChoice" CheckBoxValue="1" Text="{\CraftScopeText}Create a &amp;desktop shortcut" />
+        <Control Id="Next" Type="PushButton" X="214" Y="182" Width="66" Height="20" Default="yes" Text="Next">
+          <!-- An unchecked checkbox clears its property. Publish an explicit zero so the
+               elevated execute sequence receives an unambiguous opt-out. -->
+          <Publish Property="DESKTOPSHORTCUT" Value="1" Order="1" Condition="DesktopShortcutChoice" />
+          <Publish Property="DESKTOPSHORTCUT" Value="0" Order="2" Condition="NOT DesktopShortcutChoice" />
+          <Publish Event="EndDialog" Value="Return" Order="3" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="290" Y="182" Width="60" Height="20" Cancel="yes" Text="Cancel"><Publish Event="EndDialog" Value="Exit" /></Control>
+      </Dialog>
     </UI>
+    <InstallUISequence>
+      <!-- Component conditions must see the choice before costing. Not shown during
+           basic/silent installs, repair or uninstall. -->
+      <Show Dialog="DesktopShortcutDlg" Before="CostInitialize" Condition="NOT Installed AND NOT REMOVE AND UILevel = 5" />
+    </InstallUISequence>
 
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="CraftSuiteFolder" Name="Produktivitas">
@@ -38,6 +71,7 @@
       </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
 
     <Feature Id="Main" Title="WordKu" Level="1">
       <ComponentGroupRef Id="AppNotices" />
@@ -143,6 +177,18 @@
 
       <Component Id="WordcraftCli">
         <File Id="WordcraftCliExe" Source="$(var.BinDir)\wordku-cli.exe" KeyPath="yes" />
+      </Component>
+
+      <!-- Persist both on and off, independently of the optional shortcut. AppSearch reads
+           this before MajorUpgrade removes the previous product. -->
+      <Component Id="DesktopShortcutPreference">
+        <RegistryValue Root="HKMU" Key="Software\WordKu\Installer" Name="DesktopShortcut" Value="[DESKTOPSHORTCUT]" Type="string" KeyPath="yes" />
+      </Component>
+      <Component Id="DesktopShortcutComponent" Directory="DesktopFolder" Condition="DESKTOPSHORTCUT = &quot;1&quot;">
+        <Shortcut Id="DesktopShortcut" Name="WordKu" Description="WordKu word processor" Target="[#WordcraftExe]" WorkingDirectory="INSTALLFOLDER" Icon="WordcraftIcon.ico" IconIndex="0" />
+        <!-- HKMU resolves to HKLM for a per-machine install, so another account can uninstall
+             the marker too. MSI root -1 also satisfies ICE43 for this shortcut. -->
+        <RegistryValue Root="HKMU" Key="Software\WordKu\Installer" Name="DesktopShortcutComponent" Value="1" Type="integer" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Fragment>
