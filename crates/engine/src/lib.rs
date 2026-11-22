@@ -16,6 +16,8 @@ mod io_ext;
 pub mod keymap;
 pub(crate) mod locale;
 pub mod math_gallery;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod open_watch;
 pub mod packs;
 pub(crate) mod prefs;
 pub mod print;

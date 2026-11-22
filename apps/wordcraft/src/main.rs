@@ -627,6 +627,10 @@ fn main() -> eframe::Result {
                 if let Err(e) = app.session.enable_recovery(dir.join("recovery"), std::sync::Arc::new(move || ctx.request_repaint())) {
                     log::warn!("local recovery unavailable: {e}");
                 }
+                // A file being read is named in a marker there, so a crash while reading it is
+                // reported on the next start: here, for an earlier run's crash.
+                wordcraft_engine::open_watch::enable(dir.join("opening"));
+                app.report_interrupted_opens(&wordcraft_engine::open_watch::interrupted());
             }
             app.ui.window = restored;
             app.set_window_builder(window_builder);

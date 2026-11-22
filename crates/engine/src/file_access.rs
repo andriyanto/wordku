@@ -152,6 +152,13 @@ fn with_scope<T>(scope: Option<Scope>, f: impl FnOnce() -> T) -> T {
     f()
 }
 
+/// `f`, to run on another thread under the roots in force on this one: a document read on a
+/// thread of its own ([`crate::open_watch`]) stays inside the folders its command may reach.
+pub(crate) fn carried<T>(f: impl FnOnce() -> T) -> impl FnOnce() -> T {
+    let scope = SCOPE.with(|s| s.borrow().clone());
+    move || with_scope(scope, f)
+}
+
 /// Run `f` with `roots` in force on this thread (`None`: as things stand).
 pub fn confine<T>(roots: Option<&Arc<AutomationRoots>>, f: impl FnOnce() -> T) -> T {
     match roots {
@@ -506,6 +513,8 @@ mod tests {
                 || path.strip_prefix(&src).is_ok_and(|rel| rel.components().any(|c| c.as_os_str() == "tests"))
                 || path.starts_with(src.join("io"))
                 || path == src.join("recovery/desktop.rs")
+                // Its markers live in the app's settings folder, never at a path a command names.
+                || path == src.join("open_watch.rs")
             {
                 continue;
             }

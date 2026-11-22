@@ -290,12 +290,14 @@ fn read_document(s: &Session, path: &str, v: &Value) -> Result<(Document, bool),
         if bytes.is_empty() {
             (normal_document(s), false)
         } else {
-            crate::io::open_bytes_in(path, &bytes, password, &s.region()).map_err(CmdError::Failed)?
+            let (name, password, region) = (path.to_string(), password.map(str::to_string), s.region());
+            guarded(path, move || crate::io::open_bytes_in(&name, &bytes, password.as_deref(), &region))?
         }
     } else if crate::io::is_empty_file(std::path::Path::new(path)) {
         (normal_document(s), false)
     } else {
-        crate::io::open_path_in(std::path::Path::new(path), password, &s.region()).map_err(CmdError::Failed)?
+        let (name, password, region) = (path.to_string(), password.map(str::to_string), s.region());
+        guarded(path, move || crate::io::open_path_in(std::path::Path::new(&name), password.as_deref(), &region))?
     };
     let ext = std::path::Path::new(path).extension().and_then(std::ffi::OsStr::to_str).unwrap_or("").to_ascii_lowercase();
     if let Some(lang) = s.prefs.default_language.as_ref().or(s.editing_lang.as_ref())
@@ -304,6 +306,23 @@ fn read_document(s: &Session, path: &str, v: &Value) -> Result<(Document, bool),
         Arc::make_mut(&mut doc.styles).default_chr.lang = Some(lang.clone());
     }
     Ok((doc, encrypted))
+}
+
+/// Read a document file with `read`: on the desktop on a thread of its own, within
+/// [`crate::open_watch::OPEN_LIMIT`] and with a marker naming `path` while it lasts, so a file that
+/// keeps the reader busy fails instead of freezing the app, and one that crashes it is named on
+/// the next start ([`crate::open_watch`]). In the browser, as it is.
+fn guarded(path: &str, read: impl FnOnce() -> Result<(Document, bool), String> + Send + 'static) -> Result<(Document, bool), CmdError> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _reading = crate::open_watch::Reading::start(path);
+        crate::open_watch::read_within(path, crate::open_watch::OPEN_LIMIT, read).map_err(CmdError::Failed)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = path;
+        read().map_err(CmdError::Failed)
+    }
 }
 
 /// File › New from a template (#2852): a new, untitled document with the template's content,

@@ -64,7 +64,19 @@ pub(super) fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         Dialog::MergeRule { .. } => merge_rule_dialog(app, ui, d),
         Dialog::MatchFields { .. } => match_fields_dialog(ui, d),
         Dialog::CheckErrors { .. } => check_errors_dialog(ui, d),
+        Dialog::OpenProblem { .. } => open_problem_dialog(ui, d),
     }
+}
+
+/// A file that couldn't be opened: the message and Close.
+fn open_problem_dialog(ui: &mut Ui, d: &mut Dialog) -> bool {
+    let Dialog::OpenProblem { text } = d else {
+        return false;
+    };
+    ui.set_max_width(440.0);
+    ui.label(text.as_str());
+    let (ok, cancel) = buttons(ui, tl!("Close"));
+    ok || cancel
 }
 
 fn rename_document_dialog(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {

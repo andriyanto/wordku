@@ -956,6 +956,38 @@ fn a_file_that_wont_open_says_which_file_and_why() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// A file whose reading ran out of time is said in a dialog, not only on the status bar; one a
+/// crash interrupted on the last run is named in a dialog on the next start.
+#[test]
+fn open_problems_are_said_in_a_dialog() {
+    let mut a = app();
+    let error = "Reading stopped after 60 seconds: WordKu couldn't finish reading Loop.docx. The file may be damaged, or too complex to open.";
+    assert!(wordcraft_engine::open_watch::is_time_limit(error));
+    let msg = a.report_open_failure("/docs/Loop.docx", error);
+    match &a.dialog {
+        Some(dialogs::Dialog::OpenProblem { text }) => assert_eq!(text, &msg),
+        other => panic!("no dialog: {:?}", other.as_ref().map(dialogs::Dialog::name)),
+    }
+    // Other failures stay on the status bar, as before.
+    let mut b = app();
+    b.report_open_failure("/docs/Broken.docx", "not a Word file");
+    assert!(b.dialog.is_none());
+    // Nothing interrupted: no dialog.
+    let mut c = app();
+    c.report_interrupted_opens(&[]);
+    assert!(c.dialog.is_none());
+    c.report_interrupted_opens(&["/docs/Crash.docx".to_string()]);
+    match &c.dialog {
+        Some(dialogs::Dialog::OpenProblem { text }) => assert!(text.contains("Crash.docx") && text.contains("Recover"), "{text}"),
+        other => panic!("no dialog: {:?}", other.as_ref().map(dialogs::Dialog::name)),
+    }
+    c.report_interrupted_opens(&["/docs/A.docx".to_string(), "/docs/B.docx".to_string()]);
+    match &c.dialog {
+        Some(dialogs::Dialog::OpenProblem { text }) => assert!(text.contains("A.docx") && text.contains("B.docx"), "{text}"),
+        other => panic!("no dialog: {:?}", other.as_ref().map(dialogs::Dialog::name)),
+    }
+}
+
 /// A failed open of a file, with unsaved typing in the window, still names the file and the
 /// cause (#1103). (An open no longer waits on "Save changes?": the file opens in its own window.)
 #[test]
